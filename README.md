@@ -1,74 +1,121 @@
 # Memory latency test
 
-This tool measures the access latency of the memory hierarchy of a machine (cache and RAM).
-
-It accesses data spread over memory areas of increasing size; when the size fits a specific cache level, all data accesses should result in a hit at that level, and pay the corresponding latency price.
-To prevent hardware prefetching from impacting the results, the tool leverages the same memory access pattern used by the memory latency test of [lmbench](https://lmbench.sourceforge.net/): memory is split into items of the size of a cache line, each item contains the pointer to the next item to access, and pointers are chained to jump backward of a certain stride.
-For each memory size, multiple accesses are performed and the average access time is reported.
+This is the fork of [FedeParola/memory-latency](https://github.com/FedeParola/memory-latency) with huge pages support.
 
 ## Building
 Simply run `make` in the main folder of the project.
 
 ## Running
+### Using malloc
 ```
-Usage: ./memtest [OPTIONS]
-Options:
-  -l, --line-size       Size of a cache line in B (default 64)
-  -a, --accesses        Number of memory accesses for each memory size (default 10000000)
-  -s, --stride          Stride between two consecutive memory accesses in B (default 512)
-  -m, --max-size        Maximum size of tested memory in MiB (default 1024)
-  -f, --forward         Forward memory scan (default backward)
-  -i, --index           Index-based memory scan (default pointer-based)
-  -c, --concurrent      Run the test on two concurrent threads
-```
-Example output for an Intel Xeon Silver 4114 CPU:
-```
+./memtest
 Running backward pointer-based scan on one thread.
 Cache line size 64 B, max memory size 1024 MiB.
 Performing 10000000 accesses per size.
 
 Thread, Mem size (MiB), Access latency (ns)
-0, 0.00049, 1.605
-0, 0.00098, 1.605
-0, 0.00195, 1.605
-0, 0.00293, 1.605
-0, 0.00391, 1.606
-0, 0.00586, 1.613
-0, 0.00781, 1.605
-0, 0.01172, 1.605
-0, 0.01562, 1.605
-0, 0.02344, 1.606
-0, 0.03125, 1.607
-0, 0.04688, 5.011
-0, 0.06250, 5.040
-0, 0.09375, 5.062
-0, 0.12500, 5.034
-0, 0.18750, 5.028
-0, 0.25000, 5.048
-0, 0.37500, 5.596
-0, 0.50000, 5.572
-0, 0.75000, 6.789
-0, 1.00000, 10.188
-0, 1.50000, 15.152
-0, 2.00000, 17.183
-0, 3.00000, 17.384
-0, 4.00000, 17.472
-0, 6.00000, 18.256
-0, 8.00000, 18.683
-0, 12.00000, 23.318
-0, 16.00000, 33.037
-0, 24.00000, 41.318
-0, 32.00000, 46.170
-0, 48.00000, 50.796
-0, 64.00000, 52.078
-0, 96.00000, 53.798
-0, 128.00000, 54.895
-0, 192.00000, 55.120
-0, 256.00000, 55.988
-0, 384.00000, 56.475
-0, 512.00000, 57.039
-0, 768.00000, 57.705
-0, 1024.00000, 57.129
+0, 0.00049, 1.440
+0, 0.00098, 1.439
+0, 0.00195, 1.442
+0, 0.00293, 1.439
+0, 0.00391, 1.441
+0, 0.00586, 1.438
+0, 0.00781, 1.440
+0, 0.01172, 1.440
+0, 0.01562, 1.442
+0, 0.02344, 1.441
+0, 0.03125, 1.440
+0, 0.04688, 4.484
+0, 0.06250, 4.482
+0, 0.09375, 4.507
+0, 0.12500, 4.511
+0, 0.18750, 4.501
+0, 0.25000, 4.499
+0, 0.37500, 5.017
+0, 0.50000, 5.026
+0, 0.75000, 6.701
+0, 1.00000, 9.279
+0, 1.50000, 14.487
+0, 2.00000, 15.739
+0, 3.00000, 15.837
+0, 4.00000, 15.819
+0, 6.00000, 16.908
+0, 8.00000, 17.796
+0, 12.00000, 18.422
+0, 16.00000, 20.629
+0, 24.00000, 27.911
+0, 32.00000, 36.195
+0, 48.00000, 45.038
+0, 64.00000, 46.860
+0, 96.00000, 49.226
+0, 128.00000, 50.716
+0, 192.00000, 52.505
+0, 256.00000, 53.014
+0, 384.00000, 53.902
+0, 512.00000, 53.989
+0, 768.00000, 54.422
+0, 1024.00000, 54.401
 ```
-Results plotted using a logarithmic scale for the memory size:
-![Memory latency plot](plot.png)
+
+### Using huge pages mmap
+Prerequisite.
+Default huge page size - 2MB
+```
+grep Hugepagesize /proc/meminfo
+Hugepagesize:       2048 kB
+```
+Test uses 1GB memsize by default, so it needs at least such 512 pages, let's double that.
+```
+echo 1000 > /proc/sys/vm/nr_hugepages
+```
+Specify '-t' parameter to use mmap instead of mmaloc
+```
+./memtest -t
+Running backward pointer-based scan on one thread.
+Cache line size 64 B, max memory size 1024 MiB.
+Using Huge Pages.
+Performing 10000000 accesses per size.
+
+Thread, Mem size (MiB), Access latency (ns)
+0, 0.00049, 1.441
+0, 0.00098, 1.454
+0, 0.00195, 1.440
+0, 0.00293, 1.441
+0, 0.00391, 1.440
+0, 0.00586, 1.441
+0, 0.00781, 1.441
+0, 0.01172, 1.439
+0, 0.01562, 1.439
+0, 0.02344, 1.441
+0, 0.03125, 1.440
+0, 0.04688, 4.498
+0, 0.06250, 4.492
+0, 0.09375, 4.471
+0, 0.12500, 4.483
+0, 0.18750, 4.480
+0, 0.25000, 4.485
+0, 0.37500, 4.480
+0, 0.50000, 4.513
+0, 0.75000, 4.488
+0, 1.00000, 4.767
+0, 1.50000, 12.955
+0, 2.00000, 13.196
+0, 3.00000, 13.229
+0, 4.00000, 13.235
+0, 6.00000, 13.370
+0, 8.00000, 13.316
+0, 12.00000, 13.440
+0, 16.00000, 13.694
+0, 24.00000, 20.906
+0, 32.00000, 33.862
+0, 48.00000, 37.538
+0, 64.00000, 39.276
+0, 96.00000, 41.374
+0, 128.00000, 42.496
+0, 192.00000, 43.654
+0, 256.00000, 44.150
+0, 384.00000, 44.683
+0, 512.00000, 44.721
+0, 768.00000, 44.772
+0, 1024.00000, 45.547
+```

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/mman.h>
 
 #define DEFAULT_ACCESSES 10000000
 #define WARMUP_ACCESSES 10000000
@@ -22,6 +23,7 @@ static unsigned long opt_max_size = DEFAULT_MAX_SIZE;
 static int opt_forward = 0;
 static int opt_index_based = 0;
 static int opt_concurrent = 0;
+static int opt_huge_pages = 0;
 static struct option long_options[] = {
 	{"line-size", optional_argument, 0, 'l'},
 	{"accesses", optional_argument, 0, 'a'},
@@ -30,6 +32,7 @@ static struct option long_options[] = {
 	{"forward", optional_argument, 0, 'f'},
 	{"index", optional_argument, 0, 'i'},
 	{"concurrent", optional_argument, 0, 'c'},
+	{"huge-pages", optional_argument, 0, 't'},
 	{0, 0, 0, 0}
 };
 
@@ -44,7 +47,8 @@ static void usage(const char *prog)
 		"  -m, --max-size	Maximum size of tested memory in MiB (default %u)\n"
 		"  -f, --forward		Forward memory scan (default backward)\n"
 		"  -i, --index		Index-based memory scan (default pointer-based)\n"
-		"  -c, --concurrent	Run the test on two concurrent threads\n",
+		"  -c, --concurrent	Run the test on two concurrent threads\n"
+		"  -t, --huge-pages	Use huge page allocations\n",
 		prog, DEFAULT_CACHE_LINE_SIZE, DEFAULT_ACCESSES, DEFAULT_STRIDE,
 		DEFAULT_MAX_SIZE / (1024 * 1024));
 
@@ -56,7 +60,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "l:a:s:m:fic", long_options,
+		c = getopt_long(argc, argv, "l:a:s:m:fict", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -82,6 +86,9 @@ static void parse_command_line(int argc, char **argv)
 			break;
 		case 'c':
 			opt_concurrent = 1;
+			break;
+		case 't':
+			opt_huge_pages = 1;
 			break;
 		default:
 			usage(argv[0]);
@@ -289,13 +296,25 @@ static double scan(long id, char *mem, unsigned long size)
 
 static void *run_test(void *arg)
 {
+	char *mem;
 	long id = (long)arg;
 
-	char *mem = malloc(opt_max_size);
-	if (!mem) {
-		fprintf(stderr, "Error allocating memory: %s\n",
-			strerror(errno));
-		exit(1);
+	if (opt_huge_pages) {
+		mem = mmap(NULL, opt_max_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
+		if (mem == MAP_FAILED) {
+			fprintf(stderr, "Error allocating huge pages: %s\n",
+					strerror(errno));
+			fprintf(stderr, "Make sure huge pages available: cat /proc/meminfo  | grep -E '(HugePages_Free|Hugepagesize'\n");
+			fprintf(stderr, "Add more otherwise: echo 1000 > /proc/sys/vm/nr_hugepages\n");
+			exit(1);
+		}
+	} else {
+		mem = malloc(opt_max_size);
+		if (!mem) {
+			fprintf(stderr, "Error allocating memory: %s\n",
+					strerror(errno));
+			exit(1);
+		}
 	}
 
 	warmup_memory(mem, opt_max_size);
@@ -310,7 +329,10 @@ static void *run_test(void *arg)
 		       latency);
 	}
 
-	free(mem);
+	if (opt_huge_pages)
+		munmap(mem, opt_max_size);
+	else
+		free(mem);
 }
 
 int main(int argc, char *argv[])
@@ -325,6 +347,8 @@ int main(int argc, char *argv[])
 	       opt_concurrent ? "two threads" : "one thread");
 	printf("Cache line size %u B, max memory size %lu MiB.\n", opt_line_sz,
 	       opt_max_size / (1024 * 1024));
+	if (opt_huge_pages)
+		printf("Using Huge Pages.\n");
 	printf("Performing %lu accesses per size.\n\n", opt_accesses);
 
 	printf("Thread, Mem size (MiB), Access latency (ns)\n");
